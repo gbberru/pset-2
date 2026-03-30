@@ -1,0 +1,1 @@
+{"year": 2025, "month": 11, "month_str": "11", "dataset": "yellow", "schema": "raw", "table_name": "yellow_tripdata_2025_11", "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-11.parquet", "local_path": "/home/src/orquestador/data/raw_landing/yellow_tripdata_2025_11.parquet"}
