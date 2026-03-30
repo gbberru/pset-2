@@ -32,8 +32,8 @@ services:
   orquestador:
     image: mageai/mageai
     volumes:
-      - data-orquestador:/home/src
-      #./data-orquestador:/home/src
+      #- data-orquestador:/home/src
+      - ./data-orquestador:/home/src
     ports:
       - "6789:6789"
     command: /app/run_app.sh mage start orquestador
