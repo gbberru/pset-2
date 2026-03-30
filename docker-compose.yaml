@@ -15,12 +15,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 5s
- # ingesta-datos:
- #   image: ingesta-datos
- #   build: .
- #   depends_on:
-  #    data-warehouse:
-  #      condition: service_healthy
+
   warehouse-ui:
     image: dpage/pgadmin4
     environment:
@@ -32,7 +27,6 @@ services:
   orquestador:
     image: mageai/mageai
     volumes:
-      #- data-orquestador:/home/src
       - ./data-orquestador:/home/src
     ports:
       - "6789:6789"
@@ -40,4 +34,3 @@ services:
 
 volumes:
   warehouse-volume:
-  #data-orquestador:   # retirar
