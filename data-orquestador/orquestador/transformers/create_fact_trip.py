@@ -2,23 +2,20 @@ from mage_ai.settings.repo import get_repo_path
 from mage_ai.io.config import ConfigFileLoader
 from mage_ai.io.postgres import Postgres
 from os import path
+from datetime import date
 
 if 'transformer' not in globals():
     from mage_ai.data_preparation.decorators import transformer
 
 
 def run_queries(loader, queries):
-    if hasattr(loader, 'execute_queries'):
-        loader.execute_queries(queries, commit=True)
-    else:
-        for query in queries:
-            loader.execute(query, commit=True)
+    loader.execute_queries(queries, commit=True)
 
 
 @transformer
 def create_fact_trip(params, *args, **kwargs):
     """
-    Crea la tabla de hechos principal del modelo dimensional.
+    Crea una fact table liviana para cumplir el taller.
     Granularidad: 1 fila = 1 viaje limpio de 2025.
     """
 
@@ -28,130 +25,114 @@ def create_fact_trip(params, *args, **kwargs):
     config_path = path.join(get_repo_path(), 'io_config.yaml')
     config_profile = 'default'
 
-    queries = [
-        f"""
-        DROP TABLE IF EXISTS {clean_schema}.fact_trip CASCADE;
-        """,
-        f"""
-        CREATE TABLE {clean_schema}.fact_trip (
-            trip_key BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            trip_hash TEXT NOT NULL UNIQUE,
-
-            vendor_key INT REFERENCES {clean_schema}.dim_vendor(vendor_key),
-            payment_type_key INT REFERENCES {clean_schema}.dim_payment_type(payment_type_key),
-            pickup_location_key INT NOT NULL REFERENCES {clean_schema}.dim_pickup_location(pickup_location_key),
-            dropoff_location_key INT NOT NULL REFERENCES {clean_schema}.dim_dropoff_location(dropoff_location_key),
-
-            trip_date DATE NOT NULL,
-            pickup_datetime TIMESTAMP NOT NULL,
-            dropoff_datetime TIMESTAMP NOT NULL,
-
-            passenger_count INT,
-            trip_distance NUMERIC(12, 2),
-            fare_amount NUMERIC(12, 2),
-            extra NUMERIC(12, 2),
-            mta_tax NUMERIC(12, 2),
-            tip_amount NUMERIC(12, 2),
-            tolls_amount NUMERIC(12, 2),
-            improvement_surcharge NUMERIC(12, 2),
-            congestion_surcharge NUMERIC(12, 2),
-            airport_fee NUMERIC(12, 2),
-            cbd_congestion_fee NUMERIC(12, 2),
-            total_amount NUMERIC(12, 2),
-            trip_duration_minutes NUMERIC(12, 2),
-
-            rate_code_id INT,
-            store_and_fwd_flag TEXT,
-
-            trip_count INT NOT NULL DEFAULT 1
-        );
-        """,
-        f"""
-        INSERT INTO {clean_schema}.fact_trip (
-            trip_hash,
-            vendor_key,
-            payment_type_key,
-            pickup_location_key,
-            dropoff_location_key,
-            trip_date,
-            pickup_datetime,
-            dropoff_datetime,
-            passenger_count,
-            trip_distance,
-            fare_amount,
-            extra,
-            mta_tax,
-            tip_amount,
-            tolls_amount,
-            improvement_surcharge,
-            congestion_surcharge,
-            airport_fee,
-            cbd_congestion_fee,
-            total_amount,
-            trip_duration_minutes,
-            rate_code_id,
-            store_and_fwd_flag,
-            trip_count
-        )
-        SELECT
-            s.trip_hash,
-            dv.vendor_key,
-            dpt.payment_type_key,
-            dpl.pickup_location_key,
-            ddl.dropoff_location_key,
-            s.trip_date,
-            s.pickup_datetime,
-            s.dropoff_datetime,
-            s.passenger_count,
-            s.trip_distance,
-            s.fare_amount,
-            s.extra,
-            s.mta_tax,
-            s.tip_amount,
-            s.tolls_amount,
-            s.improvement_surcharge,
-            s.congestion_surcharge,
-            s.airport_fee,
-            s.cbd_congestion_fee,
-            s.total_amount,
-            s.trip_duration_minutes,
-            s.rate_code_id,
-            s.store_and_fwd_flag,
-            1 AS trip_count
-        FROM {clean_schema}.stg_trip_{year} s
-        JOIN {clean_schema}.dim_vendor dv
-          ON s.vendor_id = dv.vendor_id
-        LEFT JOIN {clean_schema}.dim_payment_type dpt
-          ON s.payment_type_id = dpt.payment_type_id
-        JOIN {clean_schema}.dim_pickup_location dpl
-          ON s.pickup_location_id = dpl.pickup_location_id
-        JOIN {clean_schema}.dim_dropoff_location ddl
-          ON s.dropoff_location_id = ddl.dropoff_location_id;
-        """,
-        f"""
-        CREATE INDEX IF NOT EXISTS ix_fact_trip_trip_date
-        ON {clean_schema}.fact_trip(trip_date);
-        """,
-        f"""
-        CREATE INDEX IF NOT EXISTS ix_fact_trip_vendor_key
-        ON {clean_schema}.fact_trip(vendor_key);
-        """,
-        f"""
-        CREATE INDEX IF NOT EXISTS ix_fact_trip_payment_type_key
-        ON {clean_schema}.fact_trip(payment_type_key);
-        """,
-        f"""
-        CREATE INDEX IF NOT EXISTS ix_fact_trip_pickup_location_key
-        ON {clean_schema}.fact_trip(pickup_location_key);
-        """,
-        f"""
-        CREATE INDEX IF NOT EXISTS ix_fact_trip_dropoff_location_key
-        ON {clean_schema}.fact_trip(dropoff_location_key);
-        """,
-    ]
-
     with Postgres.with_config(ConfigFileLoader(config_path, config_profile)) as loader:
-        run_queries(loader, queries)
+        # Diagnóstico: confirma base y schema actuales
+        info = loader.load("""
+        SELECT current_database() AS db_name,
+               current_schema() AS schema_name;
+        """)
+        print(info)
+
+        # Recrear fact table
+        run_queries(loader, [
+            f"DROP TABLE IF EXISTS {clean_schema}.fact_trip CASCADE;",
+            f"""
+            CREATE TABLE {clean_schema}.fact_trip (
+                trip_key BIGSERIAL PRIMARY KEY,
+                trip_date DATE NOT NULL,
+                pickup_datetime TIMESTAMP NOT NULL,
+                dropoff_datetime TIMESTAMP NOT NULL,
+
+                vendor_key INT,
+                payment_type_key INT,
+                pickup_location_key INT,
+                dropoff_location_key INT,
+
+                trip_count INT NOT NULL DEFAULT 1,
+                trip_distance NUMERIC(12, 2),
+                fare_amount NUMERIC(12, 2),
+                tip_amount NUMERIC(12, 2),
+                tolls_amount NUMERIC(12, 2),
+                total_amount NUMERIC(12, 2),
+                trip_duration_minutes NUMERIC(12, 2)
+            );
+            """
+        ])
+
+        # Carga por mes
+        for month in range(1, 13):
+            start_date = date(year, month, 1)
+            if month == 12:
+                end_date = date(year + 1, 1, 1)
+            else:
+                end_date = date(year, month + 1, 1)
+
+            print(f'Cargando fact_trip mes {month:02d}...')
+
+            run_queries(loader, [
+                f"""
+                INSERT INTO {clean_schema}.fact_trip (
+                    trip_date,
+                    pickup_datetime,
+                    dropoff_datetime,
+                    vendor_key,
+                    payment_type_key,
+                    pickup_location_key,
+                    dropoff_location_key,
+                    trip_count,
+                    trip_distance,
+                    fare_amount,
+                    tip_amount,
+                    tolls_amount,
+                    total_amount,
+                    trip_duration_minutes
+                )
+                SELECT
+                    s.trip_date,
+                    s.pickup_datetime,
+                    s.dropoff_datetime,
+                    dv.vendor_key,
+                    dpt.payment_type_key,
+                    dpl.pickup_location_key,
+                    ddl.dropoff_location_key,
+                    1 AS trip_count,
+                    s.trip_distance,
+                    s.fare_amount,
+                    s.tip_amount,
+                    s.tolls_amount,
+                    s.total_amount,
+                    s.trip_duration_minutes
+                FROM {clean_schema}.stg_trip_{year} s
+                JOIN {clean_schema}.dim_vendor dv
+                  ON s.vendor_id = dv.vendor_id
+                LEFT JOIN {clean_schema}.dim_payment_type dpt
+                  ON s.payment_type_id = dpt.payment_type_id
+                JOIN {clean_schema}.dim_pickup_location dpl
+                  ON s.pickup_location_id = dpl.pickup_location_id
+                JOIN {clean_schema}.dim_dropoff_location ddl
+                  ON s.dropoff_location_id = ddl.dropoff_location_id
+                WHERE s.trip_date >= DATE '{start_date}'
+                  AND s.trip_date < DATE '{end_date}';
+                """
+            ])
+
+        # Índice mínimo y estadísticas
+        run_queries(loader, [
+            f"""
+            CREATE INDEX IF NOT EXISTS ix_fact_trip_trip_date
+            ON {clean_schema}.fact_trip(trip_date);
+            """,
+            f"ANALYZE {clean_schema}.fact_trip;"
+        ])
+
+        # Verificación final
+        validation = loader.load(f"""
+        SELECT
+            current_database() AS db_name,
+            COUNT(*) AS fact_trip_rows
+        FROM {clean_schema}.fact_trip;
+        """)
+        print(validation)
 
     return {
         **params,
