@@ -105,7 +105,7 @@ def create_fact_trip(params, *args, **kwargs):
                 FROM {clean_schema}.stg_trip_{year} s
                 JOIN {clean_schema}.dim_vendor dv
                   ON s.vendor_id = dv.vendor_id
-                LEFT JOIN {clean_schema}.dim_payment_type dpt
+                JOIN {clean_schema}.dim_payment_type dpt
                   ON s.payment_type_id = dpt.payment_type_id
                 JOIN {clean_schema}.dim_pickup_location dpl
                   ON s.pickup_location_id = dpl.pickup_location_id

@@ -99,8 +99,9 @@ def create_stg_trip_2025(params, *args, **kwargs):
             END AS dropoff_location_id,
 
             CASE
-                WHEN payment_type > 0 THEN payment_type::int
-                ELSE NULL
+                WHEN payment_type IS NULL THEN 5
+                WHEN payment_type <= 0 THEN 5
+                ELSE payment_type::int
             END AS payment_type_id,
 
             ROUND(COALESCE(fare_amount, 0)::numeric, 2) AS fare_amount,
